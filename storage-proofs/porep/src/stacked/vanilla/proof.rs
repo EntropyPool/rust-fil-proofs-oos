@@ -92,6 +92,8 @@ impl<'a, Tree: 'static + MerkleTreeTrait, G: 'static + Hasher> StackedDrg<'a, Tr
             t_aux.tree_d.root()
         );
 
+        info!("prove layers {:?}", pub_inputs);
+
         let get_drg_parents_columns = |x: usize| -> Result<Vec<Column<Tree::Hasher>>> {
             let base_degree = graph.base_graph().degree();
 

@@ -8,6 +8,7 @@ use generic_array::typenum::{Unsigned, U0};
 use merkletree::hash::Algorithm;
 use merkletree::proof;
 use serde::{Deserialize, Serialize};
+use log::info;
 
 use crate::drgraph::graph_height;
 use crate::hasher::{Hasher, PoseidonArity};
@@ -67,6 +68,7 @@ pub trait MerkleProofTrait:
     /// unnecessary based on how it's used.
     fn validate(&self, node: usize) -> bool {
         if !self.verify() {
+            info!("validate node {} false", node);
             return false;
         }
 
@@ -277,6 +279,7 @@ impl<
     }
 
     fn verify(&self) -> bool {
+        info!("verify 4===============");
         forward_method!(self.data, verify)
     }
 

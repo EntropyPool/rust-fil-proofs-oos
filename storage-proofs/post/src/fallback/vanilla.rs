@@ -5,7 +5,7 @@ use anyhow::ensure;
 use bellperson::bls::Fr;
 use byteorder::{ByteOrder, LittleEndian};
 use generic_array::typenum::Unsigned;
-use log::{error, trace};
+use log::{error, trace, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -366,6 +366,8 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
 
         let mut partition_proofs = Vec::new();
 
+        info!("pub_params {:?}", pub_params);
+
         // Use `BTreeSet` so failure result will be canonically ordered (sorted).
         let mut faulty_sectors = BTreeSet::new();
 
@@ -389,11 +391,15 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                 let tree_leafs = tree.leafs();
                 let rows_to_discard = default_rows_to_discard(tree_leafs, Tree::Arity::to_usize());
 
+                /*
                 trace!(
                     "Generating proof for tree leafs {} and arity {}",
                     tree_leafs,
                     Tree::Arity::to_usize(),
                 );
+                */
+
+                info!("sector_id: {}, tree_leafs: {}, challenge_count: {}", sector_id, tree_leafs, pub_params.challenge_count);
 
                 // avoid rehashing fixed inputs
                 let mut challenge_hasher = Sha256::new();
@@ -407,6 +413,7 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                         let challenge_index = ((j * num_sectors_per_chunk + i)
                             * pub_params.challenge_count
                             + n) as u64;
+
                         let challenged_leaf_start =
                             generate_leaf_challenge_inner::<<Tree::Hasher as Hasher>::Domain>(
                                 challenge_hasher.clone(),
@@ -418,6 +425,9 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                             challenged_leaf_start as usize,
                             Some(rows_to_discard),
                         );
+
+                        info!("challenge_leaf_start {} / proof {:?} / tree {:?}", challenged_leaf_start, proof, tree);
+
                         match proof {
                             Ok(proof) => {
                                 if proof.validate(challenged_leaf_start as usize)

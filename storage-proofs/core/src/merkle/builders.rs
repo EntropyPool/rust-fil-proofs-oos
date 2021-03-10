@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{ensure, Result};
 use generic_array::typenum::{self, Unsigned};
-use log::trace;
+use log::{trace, info};
 use merkletree::merkle;
 use merkletree::merkle::{
     get_merkle_tree_leafs, is_merkle_tree_size_valid, FromIndexedParallelIterator,
@@ -120,6 +120,8 @@ where
             let replica_config = replica_config.expect("replica config failure");
             lc_store.set_external_reader(ExternalReader::new_from_config(&replica_config, i)?)?;
         }
+
+        info!("store {:?}", store);
 
         if configs.len() == 1 {
             return MerkleTreeWrapper::<

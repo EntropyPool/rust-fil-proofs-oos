@@ -31,6 +31,16 @@ use crate::types::{
 };
 use crate::PoStType;
 
+#[derive(Debug, Default, Clone)]
+pub struct PrivateSectorPathInfo {
+    url: String,
+    landed_dir: PathBuf,
+    access_key: String,
+    secret_key: String,
+    bucket_name: String,
+    sector_name: String,
+}
+
 /// The minimal information required about a replica, in order to be able to generate
 /// a PoSt over it.
 #[derive(Debug)]
@@ -44,6 +54,11 @@ pub struct PrivateReplicaInfo<Tree: MerkleTreeTrait> {
     /// Contains sector-specific (e.g. merkle trees) assets
     cache_dir: PathBuf,
 
+    cache_in_oss: bool,
+    replica_in_oss: bool,
+    cache_sector_path_info: PrivateSectorPathInfo,
+    replica_sector_path_info: PrivateSectorPathInfo,
+
     _t: PhantomData<Tree>,
 }
 
@@ -51,9 +66,13 @@ impl<Tree: MerkleTreeTrait> Clone for PrivateReplicaInfo<Tree> {
     fn clone(&self) -> Self {
         Self {
             replica: self.replica.clone(),
+            replica_in_oss: self.replica_in_oss,
+            replica_sector_path_info: self.replica_sector_path_info.clone(),
             comm_r: self.comm_r,
             aux: self.aux.clone(),
             cache_dir: self.cache_dir.clone(),
+            cache_in_oss: self.cache_in_oss,
+            cache_sector_path_info: self.cache_sector_path_info.clone(),
             _t: Default::default(),
         }
     }
@@ -107,9 +126,53 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
 
         Ok(PrivateReplicaInfo {
             replica,
+            replica_in_oss: false,
+            replica_sector_path_info: Default::default(),
             comm_r,
             aux,
             cache_dir,
+            cache_in_oss: false,
+            cache_sector_path_info: Default::default(),
+            _t: Default::default(),
+        })
+    }
+
+    pub fn new_with_oss_config(
+        replica: PathBuf,
+        replica_in_oss: bool,
+        replica_sector_path_info: PrivateSectorPathInfo,
+        comm_r: Commitment,
+        cache_dir: PathBuf,
+        cache_in_oss: bool,
+        cache_sector_path_info: PrivateSectorPathInfo) -> Result<Self> {
+
+        ensure!(comm_r != [0; 32], "Invalid all zero commitment (comm_r)");
+
+        let aux = if cache_in_oss {
+            panic!("CACHE IN OSS NOT IMPLEMENTED");
+        } else {
+            let f_aux_path = cache_dir.join(CacheKey::PAux.to_string());
+            let aux_bytes = std::fs::read(&f_aux_path)
+                .with_context(|| format!("could not read from path={:?}", f_aux_path))?;
+
+            deserialize(&aux_bytes)
+        }?;
+
+        if replica_in_oss {
+            panic!("REPLICA IN OSS NOT IMPLEMENTED");
+        } else {
+            ensure!(replica.exists(), "Sealed replica does not exist");
+        }
+
+        Ok(PrivateReplicaInfo {
+            replica,
+            replica_in_oss: replica_in_oss,
+            replica_sector_path_info: replica_sector_path_info,
+            comm_r,
+            aux,
+            cache_dir,
+            cache_in_oss: cache_in_oss,
+            cache_sector_path_info: cache_sector_path_info,
             _t: Default::default(),
         })
     }
@@ -174,6 +237,7 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
             tree_count,
         )?;
 
+        info!("create tree {:?} / {:?}", replica_config, configs);
         create_tree::<Tree>(base_tree_size, &configs, Some(&replica_config))
     }
 }
@@ -366,6 +430,8 @@ pub fn generate_winning_post<Tree: 'static + MerkleTreeTrait>(
     let mut pub_sectors = Vec::with_capacity(param_sector_count);
     let mut priv_sectors = Vec::with_capacity(param_sector_count);
 
+    info!("generate winning post replicas {:?}", replicas);
+
     for _ in 0..param_sector_count {
         for ((sector_id, replica), tree) in replicas.iter().zip(trees.iter()) {
             let comm_r = replica.safe_comm_r().with_context(|| {
@@ -519,6 +585,8 @@ pub fn generate_single_vanilla_proof<Tree: 'static + MerkleTreeTrait>(
 ) -> Result<FallbackPoStSectorProof<Tree>> {
     info!("generate_single_vanilla_proof:start: {:?}", sector_id);
 
+    info!("generate single vanilla proof replica {:?} / {}", replica, sector_id);
+
     let tree = &replica
         .merkle_tree(post_config.sector_size)
         .with_context(|| {
@@ -602,6 +670,8 @@ pub fn verify_winning_post<Tree: 'static + MerkleTreeTrait>(
     };
     let pub_params: compound_proof::PublicParams<fallback::FallbackPoSt<Tree>> =
         fallback::FallbackPoStCompound::setup(&setup_params)?;
+
+    info!("verify winning post replicas {:?}", replicas);
 
     let mut pub_sectors = Vec::with_capacity(param_sector_count);
     for _ in 0..param_sector_count {
@@ -891,6 +961,8 @@ pub fn generate_window_post<Tree: 'static + MerkleTreeTrait>(
     let mut pub_sectors = Vec::with_capacity(sector_count);
     let mut priv_sectors = Vec::with_capacity(sector_count);
 
+    info!("generate window post replicas {:?}", replicas);
+
     for ((sector_id, replica), tree) in replicas.iter().zip(trees.iter()) {
         let comm_r = replica.safe_comm_r().with_context(|| {
             format!("generate_window_post: safe_comm_r failed: {:?}", sector_id)
@@ -960,6 +1032,8 @@ pub fn verify_window_post<Tree: 'static + MerkleTreeTrait>(
     };
     let pub_params: compound_proof::PublicParams<fallback::FallbackPoSt<Tree>> =
         fallback::FallbackPoStCompound::setup(&setup_params)?;
+
+    info!("verify window post replicas {:?}", replicas);
 
     let pub_sectors: Vec<_> = replicas
         .iter()

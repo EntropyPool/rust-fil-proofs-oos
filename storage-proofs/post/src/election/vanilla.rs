@@ -6,7 +6,7 @@ use anyhow::{bail, ensure, Context};
 use bellperson::bls::Fr;
 use byteorder::{ByteOrder, LittleEndian};
 use generic_array::typenum;
-use log::trace;
+use log::{trace, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -360,6 +360,8 @@ impl<'a, Tree: 'static + MerkleTreeTrait> ProofScheme<'a> for ElectionPoSt<'a, T
             tree.len(),
             tree_leafs,
         );
+
+        info!("pub_params: {:?}", pub_params);
 
         let inclusion_proofs = measure_op(Operation::PostInclusionProofs, || {
             (0..pub_params.challenge_count)
