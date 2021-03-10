@@ -31,14 +31,30 @@ use crate::types::{
 };
 use crate::PoStType;
 
+use s3::bucket::Bucket;
+use s3::creds::Credentials;
+use s3::region::Region;
+
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct PrivateSectorPathInfo {
-    url: String,
-    landed_dir: PathBuf,
-    access_key: String,
-    secret_key: String,
-    bucket_name: String,
-    sector_name: String,
+    pub url: String,
+    pub landed_dir: PathBuf,
+    pub access_key: String,
+    pub secret_key: String,
+    pub bucket_name: String,
+    pub sector_name: String,
+}
+
+impl PrivateSectorPathInfo {
+    pub fn dump(&self) {
+        info!("OSS Storage info ---");
+        info!("  URL:        {}", self.url);
+        info!("  LandedDir:  {:?}", self.landed_dir);
+        info!("  AccessKey:  {}", self.access_key);
+        info!("  SecretKey:  {}", self.secret_key);
+        info!("  BucketName: {}", self.bucket_name);
+        info!("  SectorName: {}", self.sector_name);
+    }
 }
 
 /// The minimal information required about a replica, in order to be able to generate
@@ -149,12 +165,25 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
         ensure!(comm_r != [0; 32], "Invalid all zero commitment (comm_r)");
 
         let aux = if cache_in_oss {
-            panic!("CACHE IN OSS NOT IMPLEMENTED");
+            let obj_name = cache_dir.strip_prefix(cache_sector_path_info.landed_dir.clone()).unwrap();
+            let obj_name = obj_name.strip_prefix(std::path::MAIN_SEPARATOR.to_string()).unwrap();
+            let obj_name = &obj_name.join(CacheKey::PAux.to_string());
+            let credentials = Credentials::new(
+                Some(&cache_sector_path_info.access_key),
+                Some(&cache_sector_path_info.secret_key),
+                None, None, None)?;
+            let region = Region::Custom {
+                region: "us-west-2".to_string(),
+                endpoint: cache_sector_path_info.url.clone(),
+            };
+            let bucket = Bucket::new(&cache_sector_path_info.bucket_name, region, credentials)?;
+            let (aux_bytes, code) = bucket.get_object_blocking(obj_name.to_str().unwrap())?;
+            ensure!(code == 200, "Cannot get {:?} from {}", obj_name, cache_sector_path_info.url);
+            deserialize(&aux_bytes)
         } else {
             let f_aux_path = cache_dir.join(CacheKey::PAux.to_string());
             let aux_bytes = std::fs::read(&f_aux_path)
                 .with_context(|| format!("could not read from path={:?}", f_aux_path))?;
-
             deserialize(&aux_bytes)
         }?;
 
