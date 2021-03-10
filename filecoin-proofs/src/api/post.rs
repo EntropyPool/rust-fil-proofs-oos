@@ -31,7 +31,7 @@ use crate::types::{
 };
 use crate::PoStType;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct PrivateSectorPathInfo {
     url: String,
     landed_dir: PathBuf,
@@ -140,11 +140,11 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
     pub fn new_with_oss_config(
         replica: PathBuf,
         replica_in_oss: bool,
-        replica_sector_path_info: PrivateSectorPathInfo,
+        replica_sector_path_info: &PrivateSectorPathInfo,
         comm_r: Commitment,
         cache_dir: PathBuf,
         cache_in_oss: bool,
-        cache_sector_path_info: PrivateSectorPathInfo) -> Result<Self> {
+        cache_sector_path_info: &PrivateSectorPathInfo) -> Result<Self> {
 
         ensure!(comm_r != [0; 32], "Invalid all zero commitment (comm_r)");
 
@@ -167,12 +167,12 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
         Ok(PrivateReplicaInfo {
             replica,
             replica_in_oss: replica_in_oss,
-            replica_sector_path_info: replica_sector_path_info,
+            replica_sector_path_info: replica_sector_path_info.clone(),
             comm_r,
             aux,
             cache_dir,
             cache_in_oss: cache_in_oss,
-            cache_sector_path_info: cache_sector_path_info,
+            cache_sector_path_info: cache_sector_path_info.clone(),
             _t: Default::default(),
         })
     }
