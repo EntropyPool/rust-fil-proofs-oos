@@ -166,7 +166,6 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
 
         let aux = if cache_in_oss {
             let obj_name = cache_dir.strip_prefix(cache_sector_path_info.landed_dir.clone()).unwrap();
-            let obj_name = obj_name.strip_prefix(std::path::MAIN_SEPARATOR.to_string()).unwrap();
             let obj_name = &obj_name.join(CacheKey::PAux.to_string());
             let credentials = Credentials::new(
                 Some(&cache_sector_path_info.access_key),
@@ -176,7 +175,7 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
                 region: "us-west-2".to_string(),
                 endpoint: cache_sector_path_info.url.clone(),
             };
-            let bucket = Bucket::new(&cache_sector_path_info.bucket_name, region, credentials)?;
+            let bucket = Bucket::new_with_path_style(&cache_sector_path_info.bucket_name, region, credentials)?;
             let (aux_bytes, code) = bucket.get_object_blocking(obj_name.to_str().unwrap())?;
             ensure!(code == 200, "Cannot get {:?} from {}", obj_name, cache_sector_path_info.url);
             deserialize(&aux_bytes)
