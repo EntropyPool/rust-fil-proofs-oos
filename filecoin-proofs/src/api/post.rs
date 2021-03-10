@@ -34,6 +34,7 @@ use crate::PoStType;
 use s3::bucket::Bucket;
 use s3::creds::Credentials;
 use s3::region::Region;
+use tokio::runtime::Runtime;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct PrivateSectorPathInfo {
@@ -176,7 +177,8 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
                 endpoint: cache_sector_path_info.url.clone(),
             };
             let bucket = Bucket::new_with_path_style(&cache_sector_path_info.bucket_name, region, credentials)?;
-            let (aux_bytes, code) = bucket.get_object_blocking(obj_name.to_str().unwrap())?;
+            let mut rt = Runtime::new()?;
+            let (aux_bytes, code) = rt.block_on(bucket.get_object(obj_name.to_str().unwrap())).unwrap();
             ensure!(code == 200, "Cannot get {:?} from {}", obj_name, cache_sector_path_info.url);
             deserialize(&aux_bytes)
         } else {
@@ -187,7 +189,19 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
         }?;
 
         if replica_in_oss {
-            panic!("REPLICA IN OSS NOT IMPLEMENTED");
+            let obj_name = replica.strip_prefix(replica_sector_path_info.landed_dir.clone()).unwrap();
+            let credentials = Credentials::new(
+                Some(&replica_sector_path_info.access_key),
+                Some(&replica_sector_path_info.secret_key),
+                None, None, None)?;
+            let region = Region::Custom {
+                region: "us-west-2".to_string(),
+                endpoint: replica_sector_path_info.url.clone(),
+            };
+            let bucket = Bucket::new_with_path_style(&replica_sector_path_info.bucket_name, region, credentials)?;
+            let mut rt = Runtime::new()?;
+            let (_replica_bytes, code) = rt.block_on(bucket.get_object_range(obj_name.to_str().unwrap(), 0, Some(1))).unwrap();
+            ensure!(code == 206 || code == 200, "Cannot get {:?} from {}", obj_name, replica_sector_path_info.url);
         } else {
             ensure!(replica.exists(), "Sealed replica does not exist");
         }

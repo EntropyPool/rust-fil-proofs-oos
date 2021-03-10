@@ -50,7 +50,9 @@ structopt = "0.3.12"
 humansize = "1.1.0"
 indicatif = "0.15.0"
 groupy = "0.3.0"
-rust-s3 = { version = "0.26.0",  features = ["no-verify-ssl"] }
+rust-s3 = { path = "../../rust-s3/s3" }
+futures = "0.3"
+tokio = "0.2"
 
 [dependencies.reqwest]
 version = "0.10"
