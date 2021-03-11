@@ -273,12 +273,12 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
         */
 
         let oss_config = StoreOssConfig {
-            url: self.cache_sector_path_info.url,
-            landed_dir: self.cache_sector_path_info.landed_dir,
-            access_key: self.cache_sector_path_info.access_key,
-            secret_key: self.cache_sector_path_info.secret_key,
-            bucket_name: self.cache_sector_path_info.bucket_name,
-            sector_name: self.cache_sector_path_info.sector_name,
+            url: self.cache_sector_path_info.url.clone(),
+            landed_dir: self.cache_sector_path_info.landed_dir.clone(),
+            access_key: self.cache_sector_path_info.access_key.clone(),
+            secret_key: self.cache_sector_path_info.secret_key.clone(),
+            bucket_name: self.cache_sector_path_info.bucket_name.clone(),
+            sector_name: self.cache_sector_path_info.sector_name.clone(),
         };
 
         let mut config = StoreConfig::new_with_oss_config(
@@ -286,7 +286,7 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
             CacheKey::CommRLastTree.to_string(),
             default_rows_to_discard(base_tree_leafs, Tree::Arity::to_usize()),
             self.cache_in_oss,
-            oss_config,
+            &oss_config,
         );
 
         config.size = Some(base_tree_size);
