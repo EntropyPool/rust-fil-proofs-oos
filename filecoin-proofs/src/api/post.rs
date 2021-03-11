@@ -292,7 +292,7 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
         config.size = Some(base_tree_size);
 
         let tree_count = get_base_tree_count::<Tree>();
-        let mut (configs, replica_config) = split_config_and_replica(
+        let (configs, mut replica_config) = split_config_and_replica(
             config,
             self.replica_path().to_path_buf(),
             base_tree_leafs,
