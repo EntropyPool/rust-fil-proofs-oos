@@ -329,12 +329,17 @@ pub fn split_config_and_replica(
     sub_tree_width: usize, // nodes, not bytes
     count: usize,
 ) -> Result<(Vec<StoreConfig>, ReplicaConfig)> {
+    let oss_config = config.oss_config.clone();
+    let oss = config.oss;
+
     if count == 1 {
         return Ok((
             vec![config],
             ReplicaConfig {
                 path: replica_path,
                 offsets: vec![0],
+                oss: oss,
+                oss_config: oss_config,
             },
         ));
     }
@@ -358,6 +363,8 @@ pub fn split_config_and_replica(
         ReplicaConfig {
             path: replica_path,
             offsets: replica_offsets,
+            oss: oss,
+            oss_config: oss_config,
         },
     ))
 }

@@ -7,7 +7,7 @@ use anyhow::{anyhow, ensure, Context, Result};
 use bincode::deserialize;
 use generic_array::typenum::Unsigned;
 use log::{info, trace};
-use merkletree::store::StoreConfig;
+use merkletree::store::{StoreConfig, StoreOssConfig};
 use storage_proofs::cache_key::CacheKey;
 use storage_proofs::compound_proof::{self, CompoundProof};
 use storage_proofs::hasher::{Domain, Hasher};
@@ -264,11 +264,31 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
             Tree::TopTreeArity::to_usize(),
         );
 
+        /*
         let mut config = StoreConfig::new(
             self.cache_dir_path(),
             CacheKey::CommRLastTree.to_string(),
             default_rows_to_discard(base_tree_leafs, Tree::Arity::to_usize()),
         );
+        */
+
+        let oss_config = StoreOssConfig {
+            url: self.cache_sector_path_info.url,
+            landed_dir: self.cache_sector_path_info.landed_dir,
+            access_key: self.cache_sector_path_info.access_key,
+            secret_key: self.cache_sector_path_info.secret_key,
+            bucket_name: self.cache_sector_path_info.bucket_name,
+            sector_name: self.cache_sector_path_info.sector_name,
+        };
+
+        let mut config = StoreConfig::new_with_oss_config(
+            self.cache_dir_path(),
+            CacheKey::CommRLastTree.to_string(),
+            default_rows_to_discard(base_tree_leafs, Tree::Arity::to_usize()),
+            self.cache_in_oss,
+            oss_config,
+        );
+
         config.size = Some(base_tree_size);
 
         let tree_count = get_base_tree_count::<Tree>();
@@ -627,7 +647,7 @@ pub fn generate_single_vanilla_proof<Tree: 'static + MerkleTreeTrait>(
 ) -> Result<FallbackPoStSectorProof<Tree>> {
     info!("generate_single_vanilla_proof:start: {:?}", sector_id);
 
-    info!("generate single vanilla proof replica {:?} / {}", replica, sector_id);
+    info!("generate single vanilla proof replica {}", sector_id);
 
     let tree = &replica
         .merkle_tree(post_config.sector_size)

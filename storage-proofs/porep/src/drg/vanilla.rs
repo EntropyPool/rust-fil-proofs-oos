@@ -474,6 +474,8 @@ where
         let replica_config = ReplicaConfig {
             path: replica_path,
             offsets: vec![0],
+            oss: config.oss,
+            oss_config: config.oss_config.clone(),
         };
         let tree_r_last_config =
             StoreConfig::from_config(&config, CacheKey::CommRLastTree.to_string(), None);
