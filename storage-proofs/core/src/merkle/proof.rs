@@ -8,7 +8,6 @@ use generic_array::typenum::{Unsigned, U0};
 use merkletree::hash::Algorithm;
 use merkletree::proof;
 use serde::{Deserialize, Serialize};
-use log::info;
 
 use crate::drgraph::graph_height;
 use crate::hasher::{Hasher, PoseidonArity};
