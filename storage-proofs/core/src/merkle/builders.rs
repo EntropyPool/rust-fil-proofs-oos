@@ -121,8 +121,6 @@ where
             lc_store.set_external_reader(ExternalReader::new_from_config(&replica_config, i)?)?;
         }
 
-        info!("store {:?}", store);
-
         if configs.len() == 1 {
             return MerkleTreeWrapper::<
                 Tree::Hasher,

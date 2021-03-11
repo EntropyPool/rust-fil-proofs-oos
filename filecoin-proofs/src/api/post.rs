@@ -299,7 +299,6 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
             tree_count,
         )?;
 
-        info!("create tree {:?} / {:?}", replica_config, configs);
         create_tree::<Tree>(base_tree_size, &configs, Some(&replica_config))
     }
 }
