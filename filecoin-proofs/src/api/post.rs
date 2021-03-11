@@ -292,12 +292,18 @@ impl<Tree: 'static + MerkleTreeTrait> PrivateReplicaInfo<Tree> {
         config.size = Some(base_tree_size);
 
         let tree_count = get_base_tree_count::<Tree>();
-        let (configs, replica_config) = split_config_and_replica(
+        let mut (configs, replica_config) = split_config_and_replica(
             config,
             self.replica_path().to_path_buf(),
             base_tree_leafs,
             tree_count,
         )?;
+
+        replica_config.oss = false;
+        if self.replica_in_oss {
+            replica_config.oss = true;
+            replica_config.oss_config.bucket_name = self.replica_sector_path_info.bucket_name.clone()
+        }
 
         create_tree::<Tree>(base_tree_size, &configs, Some(&replica_config))
     }
