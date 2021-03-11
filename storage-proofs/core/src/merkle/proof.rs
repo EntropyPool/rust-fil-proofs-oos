@@ -68,7 +68,6 @@ pub trait MerkleProofTrait:
     /// unnecessary based on how it's used.
     fn validate(&self, node: usize) -> bool {
         if !self.verify() {
-            info!("validate node {} false", node);
             return false;
         }
 
@@ -279,7 +278,6 @@ impl<
     }
 
     fn verify(&self) -> bool {
-        info!("verify 4===============");
         forward_method!(self.data, verify)
     }
 
