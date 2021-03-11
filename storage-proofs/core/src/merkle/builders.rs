@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{ensure, Result};
 use generic_array::typenum::{self, Unsigned};
-use log::{trace, info};
+use log::{trace};
 use merkletree::merkle;
 use merkletree::merkle::{
     get_merkle_tree_leafs, is_merkle_tree_size_valid, FromIndexedParallelIterator,
