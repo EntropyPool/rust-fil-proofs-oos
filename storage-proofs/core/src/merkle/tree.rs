@@ -35,6 +35,7 @@ pub trait MerkleTreeTrait: Send + Sync + std::fmt::Debug {
     /// Creates a merkle proof of the node at the given index.
     fn gen_proof(&self, index: usize) -> Result<Self::Proof>;
     fn gen_cached_proof(&self, i: usize, rows_to_discard: Option<usize>) -> Result<Self::Proof>;
+    fn gen_cached_proof_with_leaf_data(&self, leaf_data: LeafNodeData) -> Result<Self::Proof>;
     fn row_count(&self) -> usize;
     fn leaves(&self) -> usize;
     fn from_merkle(
@@ -91,6 +92,18 @@ impl<
 
     fn gen_proof(&self, i: usize) -> Result<Self::Proof> {
         let proof = self.inner.gen_proof(i)?;
+
+        debug_assert!(proof.validate::<H::Function>().expect("validate failed"));
+
+        MerkleProof::try_from_proof(proof)
+    }
+
+    fn gen_cached_proof_with_leaf_data(&self, leaf_data: LeafNodeData) -> Result<Self::Proof> {
+        if leaf_data.rows_to_discard.is_some() && leaf_data.rows_to_discard.expect("rows to discard failure") == 0 {
+            return self.gen_proof(leaf_data.challenge);
+        }
+
+        let proof = self.inner.gen_cached_proof_with_leaf_data(leaf_data)?;
 
         debug_assert!(proof.validate::<H::Function>().expect("validate failed"));
 

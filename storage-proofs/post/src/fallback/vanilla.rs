@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use storage_proofs_core::{
     error::{Error, Result},
     hasher::{Domain, HashFunction, Hasher},
-    merkle::{MerkleProof, MerkleProofTrait, MerkleTreeTrait, MerkleTreeWrapper},
+    merkle::{MerkleProof, MerkleProofTrait, MerkleTreeTrait, MerkleTreeWrapper, LeafNodeData},
     parameter_cache::ParameterSetMetadata,
     proof::ProofScheme,
     sector::*,
@@ -407,7 +407,8 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                 challenge_hasher.update(&u64::from(sector_id).to_le_bytes()[..]);
 
                 let mut inclusion_proofs = Vec::new();
-                for proof_or_fault in (0..pub_params.challenge_count)
+
+                let challenges: Vec<_> = (0..pub_params.challenge_count)
                     .into_par_iter()
                     .map(|n| {
                         let challenge_index = ((j * num_sectors_per_chunk + i)
@@ -421,28 +422,52 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                                 challenge_index,
                             );
 
-                        let proof = tree.gen_cached_proof(
-                            challenged_leaf_start as usize,
-                            Some(rows_to_discard),
-                        );
+                        challenged_leaf_start as usize
+                    })
+                    .collect();
 
-                        info!("challenge_leaf_start {} / proof {:?} / tree {:?}", challenged_leaf_start, proof, tree);
+                let leafs_data = tree.read_leafs(challenges, Some(rows_to_discard))?;
 
-                        match proof {
-                            Ok(proof) => {
-                                if proof.validate(challenged_leaf_start as usize)
-                                    && proof.root() == priv_sector.comm_r_last
-                                    && pub_sector.comm_r
-                                        == <Tree::Hasher as Hasher>::Function::hash2(
-                                            &priv_sector.comm_c,
-                                            &priv_sector.comm_r_last,
-                                        )
-                                {
-                                    Ok(ProofOrFault::Proof(proof))
-                                } else {
-                                    Ok(ProofOrFault::Fault(sector_id))
+                for proof_or_fault in leafs_data
+                    .iter()
+                    .map(|node| {
+                        match &node.data {
+                            Ok(data) => {
+                                let challenge = node.challenge;
+
+                                let n = LeafNodeData {
+                                    data: Ok(data.clone()),
+                                    challenge: node.challenge,
+                                    partial_row_count: node.partial_row_count,
+                                    segment_width: node.segment_width,
+                                    branches: node.branches,
+                                    rows_to_discard: node.rows_to_discard,
+                                    tree_index: node.tree_index,
+                                };
+
+                                let proof = tree.gen_cached_proof_with_leaf_data(n);
+                                // let proof = tree.gen_cached_proof(n.challenge, Some(n.rows_to_discard));
+
+                                info!("challenge_leaf_start {} / proof {:?}", challenge, proof);
+
+                                match proof {
+                                    Ok(proof) => {
+                                        if proof.validate(challenge)
+                                            && proof.root() == priv_sector.comm_r_last
+                                            && pub_sector.comm_r
+                                                == <Tree::Hasher as Hasher>::Function::hash2(
+                                                    &priv_sector.comm_c,
+                                                    &priv_sector.comm_r_last,
+                                                )
+                                        {
+                                            Ok(ProofOrFault::Proof(proof))
+                                        } else {
+                                            Ok(ProofOrFault::Fault(sector_id))
+                                        }
+                                    }
+                                    Err(_) => Ok(ProofOrFault::Fault(sector_id)),
                                 }
-                            }
+                            },
                             Err(_) => Ok(ProofOrFault::Fault(sector_id)),
                         }
                     })
