@@ -446,9 +446,8 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                                 };
 
                                 let proof = tree.gen_cached_proof_with_leaf_data(n);
-                                // let proof = tree.gen_cached_proof(n.challenge, Some(n.rows_to_discard));
 
-                                info!("challenge_leaf_start {} / proof {:?}", challenge, proof);
+                                info!("multi challenge_leaf_start {}, proof {:?}", challenge, proof);
 
                                 match proof {
                                     Ok(proof) => {
