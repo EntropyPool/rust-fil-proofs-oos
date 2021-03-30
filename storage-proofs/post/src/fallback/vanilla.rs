@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use storage_proofs_core::{
     error::{Error, Result},
     hasher::{Domain, HashFunction, Hasher},
-    merkle::{MerkleProof, MerkleProofTrait, MerkleTreeTrait, MerkleTreeWrapper, LeafNodeData},
+    merkle::{MerkleProof, MerkleProofTrait, MerkleTreeTrait, MerkleTreeWrapper},
     parameter_cache::ParameterSetMetadata,
     proof::ProofScheme,
     sector::*,
@@ -432,18 +432,12 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                     .iter()
                     .map(|node| {
                         match &node.data {
-                            Ok(data) => {
+                            Ok(_data) => {
                                 let challenge = node.challenge;
 
-                                let n = LeafNodeData {
-                                    data: Ok(data.clone()),
-                                    challenge: node.challenge,
-                                    partial_row_count: node.partial_row_count,
-                                    segment_width: node.segment_width,
-                                    branches: node.branches,
-                                    rows_to_discard: node.rows_to_discard,
-                                    tree_index: node.tree_index,
-                                };
+                                let n = node.clone();
+
+                                info!("multi challenge_leaf_start {} start", challenge);
 
                                 let proof = tree.gen_cached_proof_with_leaf_data(n);
 
