@@ -278,6 +278,7 @@ pub fn vanilla_proof<Tree: MerkleTreeTrait>(
         Tree::Arity::to_usize(),
     );
 
+    /*
     let inclusion_proofs = (0..challenges.len())
         .into_par_iter()
         .map(|challenged_leaf_index| {
@@ -293,6 +294,56 @@ pub fn vanilla_proof<Tree: MerkleTreeTrait>(
             Ok(proof)
         })
         .collect::<Result<Vec<_>>>()?;
+    */
+
+    let mut leafs = Vec::new();
+    for challenge in challenges {
+        leafs.push(*challenge as usize);
+    }
+
+    let leafs_data = tree.read_leafs(leafs, Some(rows_to_discard))?;
+    let mut inclusion_proofs = Vec::new();
+    let mut faulty_sector = false;
+
+    for proof_or_fault in leafs_data
+        .iter()
+        .map(|node| {
+            match &node.data {
+                Ok(_data) => {
+                    let challenge = node.challenge;
+                    let n = node.clone();
+
+                    let proof = tree.gen_cached_proof_with_leaf_data(n)?;
+
+                    info!("multi challenge_leaf_start {}, proof {:?}", challenge, proof);
+
+                    ensure!(
+                        proof.validate(challenge as usize) && proof.root() == priv_sector.comm_r_last,
+                        "Generated vanilla proof for sector {} is invalid",
+                        sector_id
+                    );
+
+                    Ok(ProofOrFault::Proof(proof))
+                },
+                Err(_) => Ok(ProofOrFault::Fault(sector_id))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?
+    {
+        match proof_or_fault {
+            ProofOrFault::Proof(proof) => {
+                inclusion_proofs.push(proof);
+            }
+            ProofOrFault::Fault(sector_id) => {
+                error!("faulty sector: {:?}", sector_id);
+                faulty_sector = true;
+            }
+        }
+    }
+
+    if faulty_sector {
+        ensure!(1 == 0, "sector error: {}", sector_id);
+    }
 
     Ok(Proof {
         sectors: vec![SectorProof {
