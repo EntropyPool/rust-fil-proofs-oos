@@ -312,10 +312,9 @@ pub fn vanilla_proof<Tree: MerkleTreeTrait>(
                 Ok(_data) => {
                     let challenge = node.challenge;
                     let n = node.clone();
-
                     let proof = tree.gen_cached_proof_with_leaf_data(n)?;
 
-                    info!("multi challenge_leaf_start {}, proof {:?}", challenge, proof);
+                    info!("single challenge_leaf_start {}, proof {:?}", challenge, proof);
 
                     ensure!(
                         proof.validate(challenge as usize) && proof.root() == priv_sector.comm_r_last,
@@ -417,8 +416,6 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
 
         let mut partition_proofs = Vec::new();
 
-        info!("pub_params {:?}", pub_params);
-
         // Use `BTreeSet` so failure result will be canonically ordered (sorted).
         let mut faulty_sectors = BTreeSet::new();
 
@@ -428,112 +425,151 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
             .zip(priv_inputs.sectors.chunks(num_sectors_per_chunk))
             .enumerate()
         {
-            trace!("proving partition {}", j);
+            info!("proving partition {} | {}", j, num_sectors_per_chunk);
 
-            let mut proofs = Vec::with_capacity(num_sectors_per_chunk);
-
-            for (i, (pub_sector, priv_sector)) in pub_sectors_chunk
-                .iter()
-                .zip(priv_sectors_chunk.iter())
+            let (mut proofs, mut faults) = pub_sectors_chunk
+                .par_iter()
+                .zip(priv_sectors_chunk.par_iter())
                 .enumerate()
-            {
-                let tree = priv_sector.tree;
-                let sector_id = pub_sector.id;
-                let tree_leafs = tree.leafs();
-                let rows_to_discard = default_rows_to_discard(tree_leafs, Tree::Arity::to_usize());
+                .map(|(i, (pub_sector, priv_sector))| {
 
-                /*
-                trace!(
-                    "Generating proof for tree leafs {} and arity {}",
-                    tree_leafs,
-                    Tree::Arity::to_usize(),
-                );
-                */
+                    let tree = priv_sector.tree;
+                    let sector_id = pub_sector.id;
+                    let tree_leafs = tree.leafs();
+                    let rows_to_discard = default_rows_to_discard(tree_leafs, Tree::Arity::to_usize());
 
-                info!("sector_id: {}, tree_leafs: {}, challenge_count: {}", sector_id, tree_leafs, pub_params.challenge_count);
+                    trace!(
+                        "Generating proof for tree leafs {} and arity {}",
+                        tree_leafs,
+                        Tree::Arity::to_usize(),
+                        );
 
-                // avoid rehashing fixed inputs
-                let mut challenge_hasher = Sha256::new();
-                challenge_hasher.update(AsRef::<[u8]>::as_ref(&pub_inputs.randomness));
-                challenge_hasher.update(&u64::from(sector_id).to_le_bytes()[..]);
+                    info!(
+                        "sector_id: {}, tree_leafs: {}, challenge_count: {} start",
+                        sector_id,
+                        tree_leafs,
+                        pub_params.challenge_count);
 
-                let mut inclusion_proofs = Vec::new();
+                    // avoid rehashing fixed inputs
+                    let mut challenge_hasher = Sha256::new();
+                    challenge_hasher.update(AsRef::<[u8]>::as_ref(&pub_inputs.randomness));
+                    challenge_hasher.update(&u64::from(sector_id).to_le_bytes()[..]);
 
-                let challenges: Vec<_> = (0..pub_params.challenge_count)
-                    .into_par_iter()
-                    .map(|n| {
-                        let challenge_index = ((j * num_sectors_per_chunk + i)
-                            * pub_params.challenge_count
-                            + n) as u64;
+                    let challenges: Vec<_> = (0..pub_params.challenge_count)
+                        .into_par_iter()
+                        .map(|n| {
+                            let challenge_index = ((j * num_sectors_per_chunk + i)
+                                                   * pub_params.challenge_count
+                                                   + n) as u64;
 
-                        let challenged_leaf_start =
-                            generate_leaf_challenge_inner::<<Tree::Hasher as Hasher>::Domain>(
-                                challenge_hasher.clone(),
-                                pub_params,
-                                challenge_index,
-                            );
+                            let challenged_leaf_start =
+                                generate_leaf_challenge_inner::<<Tree::Hasher as Hasher>::Domain>(
+                                    challenge_hasher.clone(),
+                                    pub_params,
+                                    challenge_index,
+                                    );
 
-                        challenged_leaf_start as usize
-                    })
+                            challenged_leaf_start as usize
+                        })
                     .collect();
 
-                let leafs_data = tree.read_leafs(challenges, Some(rows_to_discard))?;
+                    let leafs_data = match tree.read_leafs(challenges, Some(rows_to_discard)) {
+                        Ok(leafs) => leafs,
+                        Err(_) => {
+                            let mut faults = BTreeSet::new();
+                            faults.insert(sector_id);
+                            return (
+                                SectorProof {
+                                    inclusion_proofs: Vec::new(),
+                                    comm_c: priv_sector.comm_c,
+                                    comm_r_last: priv_sector.comm_r_last,
+                                },
+                                faults,
+                            );
 
-                for proof_or_fault in leafs_data
-                    .iter()
-                    .map(|node| {
-                        match &node.data {
-                            Ok(_data) => {
-                                let challenge = node.challenge;
+                        },
+                    };
 
-                                let n = node.clone();
+                    let (inclusion_proofs, faults) = leafs_data
+                        .into_par_iter()
+                        .fold(
+                            || (Vec::new(), BTreeSet::new()),
+                            |(mut inclusion_proofs, mut faults), node| {
+                                match &node.data {
+                                    Ok(_data) => {
+                                        let challenge = node.challenge;
+                                        let n = node.clone();
+                                        let proof = tree.gen_cached_proof_with_leaf_data(n);
 
-                                info!("multi challenge_leaf_start {} start", challenge);
-
-                                let proof = tree.gen_cached_proof_with_leaf_data(n);
-
-                                info!("multi challenge_leaf_start {}, proof {:?}", challenge, proof);
-
-                                match proof {
-                                    Ok(proof) => {
-                                        if proof.validate(challenge)
-                                            && proof.root() == priv_sector.comm_r_last
-                                            && pub_sector.comm_r
-                                                == <Tree::Hasher as Hasher>::Function::hash2(
-                                                    &priv_sector.comm_c,
-                                                    &priv_sector.comm_r_last,
-                                                )
-                                        {
-                                            Ok(ProofOrFault::Proof(proof))
-                                        } else {
-                                            Ok(ProofOrFault::Fault(sector_id))
+                                        match proof {
+                                            Ok(proof) => {
+                                                if proof.validate(challenge)
+                                                    && proof.root() == priv_sector.comm_r_last
+                                                        && pub_sector.comm_r
+                                                        == <Tree::Hasher as Hasher>::Function::hash2(
+                                                            &priv_sector.comm_c,
+                                                            &priv_sector.comm_r_last,
+                                                            )
+                                                        {
+                                                            inclusion_proofs.push(proof);
+                                                        } else {
+                                                            error!("faulty sector by invalid proof: {:?}", sector_id);
+                                                            faults.insert(sector_id);
+                                                        }
+                                            }
+                                            Err(_) => {
+                                                error!("faulty sector by error proof: {:?}", sector_id);
+                                                faults.insert(sector_id);
+                                            },
                                         }
+                                    },
+                                    Err(_) => {
+                                        error!("faulty sector by error leaf data: {:?}", sector_id);
+                                        faults.insert(sector_id);
                                     }
-                                    Err(_) => Ok(ProofOrFault::Fault(sector_id)),
                                 }
-                            },
-                            Err(_) => Ok(ProofOrFault::Fault(sector_id)),
-                        }
-                    })
-                    .collect::<Result<Vec<_>>>()?
-                {
-                    match proof_or_fault {
-                        ProofOrFault::Proof(proof) => {
-                            inclusion_proofs.push(proof);
-                        }
-                        ProofOrFault::Fault(sector_id) => {
-                            error!("faulty sector: {:?}", sector_id);
-                            faulty_sectors.insert(sector_id);
-                        }
-                    }
-                }
 
-                proofs.push(SectorProof {
-                    inclusion_proofs,
-                    comm_c: priv_sector.comm_c,
-                    comm_r_last: priv_sector.comm_r_last,
+                                (inclusion_proofs, faults)
+                            },
+                        )
+                    .reduce(
+                        || (Vec::new(), BTreeSet::new()),
+                        |(mut inclusion_proofs, mut faults), (p, f)| {
+                            inclusion_proofs.extend(p);
+                            faults.extend(f);
+                            (inclusion_proofs, faults)
+                        },
+                    );
+
+                info!(
+                    "sector_id: {}, tree_leafs: {}, challenge_count: {} done",
+                    sector_id,
+                    tree_leafs,
+                    pub_params.challenge_count);
+
+                (
+                    SectorProof {
+                        inclusion_proofs,
+                        comm_c: priv_sector.comm_c,
+                        comm_r_last: priv_sector.comm_r_last,
+                    },
+                    faults,
+                )
+            })
+            .fold(
+                || (Vec::new(), BTreeSet::new()),
+                |(mut sector_proofs, mut sector_faults), (proof, mut faults)| {
+                    sector_faults.append(&mut faults);
+                    sector_proofs.push(proof);
+                    (sector_proofs, sector_faults)
+                })
+            .reduce(
+                || (Vec::new(), BTreeSet::new()),
+                |(mut sector_proofs, mut sector_faults), (proofs, mut faults)| {
+                    sector_proofs.extend(proofs);
+                    sector_faults.append(&mut faults);
+                    (sector_proofs, sector_faults)
                 });
-            }
 
             // If there were less than the required number of sectors provided, we duplicate the last one
             // to pad the proof out, such that it works in the circuit part.
@@ -542,6 +578,7 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
             }
 
             partition_proofs.push(Proof { sectors: proofs });
+            faulty_sectors.append(&mut faults);
         }
 
         if faulty_sectors.is_empty() {
